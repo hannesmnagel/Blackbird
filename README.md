@@ -1,4 +1,9 @@
-# Blackbird
+# Blackbird Fork
+
+This is a Fork of Blackbird which includes iCloud sync in private containers using CKSyncEngine and therefore requiring iOS 17.
+Don't use it. Please.
+
+## Original Readme
 
 A SQLite database wrapper and model layer, using Swift concurrency and `Codable`, with no other dependencies.
 
@@ -9,7 +14,7 @@ Philosophy:
 * No schema definitions.
 * Automatic migrations.
 * Async by default.
-* Use Swift’s type system and key-paths instead of strings whenever possible.
+* Use Swift's type system and key-paths instead of strings whenever possible.
  
 ## Project status
 
@@ -206,6 +211,75 @@ try await db.transaction { core in
     try core.query("INSERT INTO posts VALUES (?, ?)", 17, "Dewey Defeats Truman")
 }
 ```
+
+## CloudKit Synchronization
+
+Blackbird now supports automatic synchronization with CloudKit. Here's how to use it:
+
+### 1. Configure your models for sync
+
+Mark any model you want to sync with CloudKit:
+
+```swift
+struct Note: BlackbirdModel {
+    @BlackbirdColumn var id: String // Use UUID().uuidString for new records
+    @BlackbirdColumn var title: String
+    @BlackbirdColumn var content: String
+    @BlackbirdColumn var createdAt: Date
+    
+    // All models are automatically synced with CloudKit
+}
+```
+
+### 2. Initialize database with CloudKit container identifier
+
+When creating your database, provide your app's CloudKit container identifier:
+
+```swift
+let database = try Blackbird.Database(
+    path: "/path/to/database.sqlite",
+    cloudKitContainerIdentifier: "iCloud.com.yourcompany.yourapp"
+)
+```
+
+### 3. Start synchronization
+
+Start synchronization when your app is ready (typically after user authentication):
+
+```swift
+// Start automatic CloudKit sync
+database.startCloudKitSync()
+```
+
+### 4. Control synchronization as needed
+
+Manually trigger sync operations when needed:
+
+```swift
+// Push local changes to CloudKit
+database.pushChangesToCloudKit()
+
+// Pull latest changes from CloudKit
+database.pullChangesFromCloudKit()
+
+// Stop synchronization (e.g., when user signs out)
+database.stopCloudKitSync()
+```
+
+### How It Works
+
+1. Blackbird automatically tracks changes to models marked for CloudKit sync
+2. Changes are queued for upload and sent periodically (or when manually requested)
+3. Remote changes are fetched and integrated into your local database
+4. Conflict resolution follows CloudKit's server-wins policy
+
+### CloudKit Setup
+
+1. Enable CloudKit in your app's capabilities in Xcode
+2. Create necessary record types in CloudKit Dashboard (optional)
+3. Blackbird will automatically create zones for your synced models
+
+CloudKit sync is designed to be simple to use while handling the complexities of data synchronization for you.
 
 ## Wishlist for future Swift-language capabilities
 

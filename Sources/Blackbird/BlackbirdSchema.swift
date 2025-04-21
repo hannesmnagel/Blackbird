@@ -295,11 +295,72 @@ extension Blackbird {
         internal func createTableStatement<T: BlackbirdModel>(type: T.Type, overrideTableName: String? = nil) -> String {
             let columnDefs = columns.map { $0.definition() }.joined(separator: ",")
             let pkDef = primaryKeys.isEmpty ? "" : ",PRIMARY KEY (`\(primaryKeys.map { $0.name }.joined(separator: "`,`"))`)"
-            return "CREATE TABLE `\(overrideTableName ?? name)` (\(columnDefs)\(pkDef))"
+            
+            let syncColumnDef = "`_sync_status` INTEGER NOT NULL DEFAULT 0"
+            
+            return "CREATE TABLE `\(overrideTableName ?? name)` (\(columnDefs),\(syncColumnDef)\(pkDef))"
         }
         
         internal func createIndexStatements<T: BlackbirdModel>(type: T.Type) -> [String] { indexes.map { $0.definition(tableName: name) } }
         
+        internal func createCloudKitSyncTriggers<T: BlackbirdModel>(type: T.Type, tableName: String) -> [String] {
+            [
+                Blackbird.Table.createCloudKitInsertTriggerStatement(tableName: tableName),
+                Blackbird.Table.createCloudKitUpdateTriggerStatement(tableName: tableName),
+                Blackbird.Table.createCloudKitDeleteTriggerStatement(tableName: tableName)
+            ]
+        }
+
+        /// Creates the SQL statement for the CloudKit insert trigger
+        public static func createCloudKitInsertTriggerStatement(tableName: String) -> String {
+            """
+            CREATE TRIGGER IF NOT EXISTS `\(tableName)_ck_insert_trigger`
+            AFTER INSERT ON `\(tableName)`
+            FOR EACH ROW
+            BEGIN
+                UPDATE `\(tableName)` SET `_sync_status` = 1 WHERE rowid = NEW.rowid;
+            END
+            """
+        }
+
+        /// Creates the SQL statement for the CloudKit update trigger
+        public static func createCloudKitUpdateTriggerStatement(tableName: String) -> String {
+            """
+            CREATE TRIGGER IF NOT EXISTS `\(tableName)_ck_update_trigger`
+            AFTER UPDATE ON `\(tableName)`
+            FOR EACH ROW
+            BEGIN
+                -- Only mark for sync if not already marked
+                UPDATE `\(tableName)` SET `_sync_status` = 1 
+                WHERE id = NEW.id AND (`_sync_status` = 0 OR `_sync_status` IS NULL);
+            END
+            """
+        }
+
+        /// Creates the SQL statement for the CloudKit delete trigger
+        public static func createCloudKitDeleteTriggerStatement(tableName: String) -> String {
+            """
+            CREATE TRIGGER IF NOT EXISTS `\(tableName)_ck_delete_trigger`
+            BEFORE DELETE ON `\(tableName)`
+            FOR EACH ROW
+            BEGIN
+                INSERT INTO `_cloudkit_deletions` (table_name, record_id) VALUES ('\(tableName)', OLD.id);
+            END
+            """
+        }
+
+        /// Creates the SQL statement for the CloudKit deletions tracking table
+        public static func createCloudKitDeletionsTableStatement() -> String {
+            """
+            CREATE TABLE IF NOT EXISTS _cloudkit_deletions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                table_name TEXT NOT NULL,
+                record_id TEXT NOT NULL,
+                deleted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        }
+
         @discardableResult
         internal func resolveWithDatabase<T: BlackbirdModel>(type: T.Type, database: Database, core: Database.Core, isExplicitResolve: Bool = false, validator: (@Sendable (_ database: Database, _ core: isolated Database.Core) throws -> Void)?) async throws -> BlackbirdModelSchemaResolution {
             if _isAlreadyResolved(type: type, in: database) { return [] }
@@ -308,9 +369,39 @@ extension Blackbird {
                 fatalError("BlackbirdModel \(String(describing: type)) is being queried before calling resolveSchema(in:) in a database with the .requireModelSchemaValidationBeforeUse option enabled")
             }
             
-            return try await core.transaction {
+            // First check if table exists
+            let tableExists = try await core.transaction { core in
+                return try core.query("SELECT name FROM sqlite_master WHERE type='table' AND name='\(name)'").count > 0
+            }
+            
+            if !tableExists {
+                // Create table with proper schema including _sync_status
+                try await database.execute(createTableStatement(type: type))
+                for createIndexStatement in createIndexStatements(type: type) {
+                    try await database.execute(createIndexStatement)
+                }
+            }
+            
+            let result = try await core.transaction {
                 try _resolveWithDatabaseIsolated(type: type, database: database, core: $0, validator: validator)
             }
+            
+            // Ensure _cloudkit_deletions table exists
+            let deletionTableExists = try await core.transaction { core in
+                return try core.query("SELECT name FROM sqlite_master WHERE type='table' AND name='_cloudkit_deletions'").count > 0
+            }
+            
+            if !deletionTableExists {
+                try await database.execute(Blackbird.Table.createCloudKitDeletionsTableStatement())
+            }
+            
+            // Create or update the triggers
+            let triggers = createCloudKitSyncTriggers(type: type, tableName: name)
+            for trigger in triggers {
+                try await database.execute(trigger)
+            }
+            
+            return result
         }
 
         @discardableResult

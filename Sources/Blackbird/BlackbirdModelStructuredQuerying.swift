@@ -408,6 +408,17 @@ extension BlackbirdModel {
         if changes.isEmpty { return }
         let table = Self.table
         try table.resolveWithDatabaseIsolated(type: Self.self, database: database, core: core) { try Self.validateSchema(database: $0, core: $1) }
+        
+        // Check if _sync_status column exists and add if needed
+        let hasStatusColumn = try core.query("PRAGMA table_info(`\(Self.tableName)`)").contains(where: { row in
+            row["name"]?.stringValue == "_sync_status"
+        })
+        
+        if !hasStatusColumn {
+            print("DEBUG: Adding missing _sync_status column to table \(Self.tableName)")
+            try core.execute("ALTER TABLE `\(Self.tableName)` ADD COLUMN _sync_status INTEGER NOT NULL DEFAULT 0")
+        }
+        
         let decoded = DecodedStructuredQuery(operation: "UPDATE", matching: matching, updating: changes)
 
         let changeCountBefore = core.changeCount
@@ -521,6 +532,16 @@ extension BlackbirdModel {
         let table = Self.table
         _ = try table.resolveWithDatabaseIsolated(type: Self.self, database: database, core: core) { try Self.validateSchema(database: $0, core: $1) }
 
+        // Check if _sync_status column exists and add if needed
+        let hasStatusColumn = try core.query("PRAGMA table_info(`\(Self.tableName)`)").contains(where: { row in
+            row["name"]?.stringValue == "_sync_status"
+        })
+        
+        if !hasStatusColumn {
+            print("DEBUG: Adding missing _sync_status column to table \(Self.tableName)")
+            try core.execute("ALTER TABLE `\(Self.tableName)` ADD COLUMN _sync_status INTEGER NOT NULL DEFAULT 0")
+        }
+
         let decoded = DecodedStructuredQuery(operation: "UPDATE", updating: changes, updateWhereAutoOptimization: false)
 
         var arguments = decoded.arguments
@@ -555,7 +576,6 @@ extension BlackbirdModel {
         }
         try core.query(query, arguments: arguments)
     }
-
 
     /// Deletes a subset of the table's columns matching the given column values, using column key-paths for this model type.
     /// - Parameters:

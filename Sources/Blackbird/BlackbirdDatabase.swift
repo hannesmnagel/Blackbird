@@ -33,6 +33,7 @@
 
 import Foundation
 import SQLite3
+import CloudKit
 
 extension Blackbird {
     public enum TransactionResult<R: Sendable>: Sendable {
@@ -221,7 +222,40 @@ extension Blackbird {
             case uniqueConstraintFailed
             case databaseIsClosed
         }
+
+
+        internal var syncEngine : CKSyncEngine {
+            if let engine = _syncEngine.value { return engine }
+
+            print("DEBUG: Creating CloudKit sync engine with container: \(containerIdentifier)")
+            let container = CKContainer(identifier: containerIdentifier)
+            
+            // Load saved state serialization if this is not an in-memory database
+            if stateSerialization.value == nil {
+                // Try loading from disk if appropriate
+                if path != nil {
+                    loadStateSerialization()
+                }
+                
+                // If still nil, it means we don't have any saved state
+                if stateSerialization.value == nil {
+                    print("DEBUG: No previous state found, starting with fresh sync state")
+                }
+            } else {
+                print("DEBUG: Found previous sync state, reusing it")
+            }
+            
+            let config = CKSyncEngine.Configuration(database: container.privateCloudDatabase, stateSerialization: stateSerialization.value, delegate: self)
+            let engine = CKSyncEngine(config)
+            print("DEBUG: CloudKit sync engine created successfully")
+            self._syncEngine.value = engine
+            return engine
+        }
         
+        internal let _syncEngine = Locked(CKSyncEngine?.none)
+        internal let stateSerialization = Locked(CKSyncEngine.State.Serialization?.none)
+        public let containerIdentifier: String
+
         /// Options for customizing database behavior.
         public struct Options: OptionSet, Sendable {
             public let rawValue: Int
@@ -352,8 +386,12 @@ extension Blackbird {
         }
 
         /// Instantiates a new SQLite database in memory, without persisting to a file.
-        public static func inMemoryDatabase(options: Options = []) throws -> Database {
-            return try Database(path: "", options: options.union([.inMemoryDatabase]))
+        ///
+        /// - Parameters:
+        ///   - options: Any custom behavior desired.
+        ///   - cloudKitContainerIdentifier: The identifier for the CloudKit container to use for syncing. If empty, sync will be disabled.
+        public static func inMemoryDatabase(options: Options = [], cloudKitContainerIdentifier: String = "") throws -> Database {
+            return try Database(path: "", options: options.union([.inMemoryDatabase]), cloudKitContainerIdentifier: cloudKitContainerIdentifier)
         }
         
         /// Instantiates a new SQLite database as a file on disk.
@@ -361,11 +399,12 @@ extension Blackbird {
         /// - Parameters:
         ///   - path: The path to the database file. If no file exists at `path`, it will be created.
         ///   - options: Any custom behavior desired.
+        ///   - cloudKitContainerIdentifier: The identifier for the CloudKit container to use for syncing. If empty, sync will be disabled.
         ///
         /// At most one instance per database filename may exist at a time.
         ///
         /// An error will be thrown if another instance exists with the same filename, the database cannot be created, or the linked version of SQLite lacks the required capabilities.
-        public init(path: String, options: Options = []) throws {
+        public init(path: String, options: Options = [], cloudKitContainerIdentifier: String = "") throws {
             // Use a local because we can't use self until everything has been initalized
             let performanceLog = PerformanceLogger(subsystem: Blackbird.loggingSubsystem, category: "Database")
             let spState = performanceLog.begin(signpost: .openDatabase)
@@ -385,6 +424,7 @@ extension Blackbird {
             self.path = normalizedOptions.contains(.inMemoryDatabase) ? nil : path
             self.cache = Cache()
             self.changeReporter = ChangeReporter(options: options, cache: cache)
+            self.containerIdentifier = cloudKitContainerIdentifier
 
             var handle: OpaquePointer? = nil
             let flags: Int32 = (options.contains(.readOnly) ? SQLITE_OPEN_READONLY : SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE) | SQLITE_OPEN_NOMUTEX
@@ -438,6 +478,11 @@ extension Blackbird {
             fileChangeMonitor?.onChange { [weak self] in
                 guard let self else { return }
                 Task { await self.core.checkForExternalDatabaseChange() }
+            }
+            
+            // Automatically initialize CloudKit sync if a container identifier is provided
+            if !cloudKitContainerIdentifier.isEmpty {
+                self.startCloudKitSync()
             }
         }
         
@@ -910,6 +955,19 @@ extension Blackbird {
 
                 guard stepResult == SQLITE_DONE else {
                     throw Blackbird.Database.Error.backupError(description: errorDesc(targetDbHandle))
+                }
+            }
+        }
+
+        /// Triggers a sync with CloudKit if a container identifier is provided.
+        internal func autoSync() {
+            if !containerIdentifier.isEmpty {
+                Task {
+                    do {
+                        try await syncEngine.sendChanges()
+                    } catch {
+                        print("ERROR: Failed to sync changes to CloudKit: \(error.localizedDescription)")
+                    }
                 }
             }
         }

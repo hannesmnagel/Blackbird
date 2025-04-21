@@ -33,6 +33,7 @@
 
 import Foundation
 import SQLite3
+import CloudKit
 
 /// A small, fast, lightweight SQLite database wrapper and model layer.
 public class Blackbird {

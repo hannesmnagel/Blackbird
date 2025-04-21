@@ -198,9 +198,13 @@ extension Blackbird.Database {
         
         internal var numChangesReportedByUpdateHook: UInt64 = 0
         
-        init(options: Options, cache: Blackbird.Database.Cache) {
+        // Reference to the database for auto-sync
+        weak var database: Blackbird.Database?
+        
+        init(options: Options, cache: Blackbird.Database.Cache, database: Blackbird.Database? = nil) {
             debugPrintEveryReportedChange = options.contains(.debugPrintEveryReportedChange)
             self.cache = cache
+            self.database = database
         }
 
         internal func changePublisher(for tableName: String) -> Blackbird.ChangePublisher {
@@ -307,7 +311,15 @@ extension Blackbird.Database {
                     if let publisher = publishers[tableName] { publisher.send(Blackbird.Change(table: tableName, primaryKeys: nil, columnNames: accumulatedChanges.columnNames)) }
                 }
             }
-        }        
+            
+            // Trigger auto-sync if changes occurred and the table isn't an internal one
+            if !changesByTable.isEmpty && !(changesByTable.keys.contains("_cloudkit_deletions") && changesByTable.count == 1) {
+                // Get the database from the cached reference
+                if let database = database {
+                    database.autoSync()
+                }
+            }
+        }
     }
 }
 
