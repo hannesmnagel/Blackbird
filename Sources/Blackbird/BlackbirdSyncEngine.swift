@@ -96,25 +96,19 @@ extension Blackbird.Row {
                     print("DEBUG: Set \(key) to text: \(textValue) in CKRecord")
                 }
             case .data(let dataValue):
-                if dataValue.count > 1_000_000 {
-                    // For large data, use CKAsset instead of inline data
-                    do {
-                        let tempDir = FileManager.default.temporaryDirectory
-                        let fileName = UUID().uuidString
-                        let fileURL = tempDir.appendingPathComponent(fileName)
-                        try dataValue.write(to: fileURL)
-                        let asset = CKAsset(fileURL: fileURL)
-                        record[key] = asset
-                        print("DEBUG: Set \(key) to CKAsset (large data: \(dataValue.count) bytes) in CKRecord")
-                    } catch {
-                        print("ERROR: Error creating CKAsset: \(error)")
-                        record[key] = nil
-                        print("DEBUG: Failed to create CKAsset for \(key), set to nil instead")
-                    }
-                } else {
-                    // For smaller data, store directly
-                    record[key] = dataValue
-                    print("DEBUG: Set \(key) to Data (size: \(dataValue.count) bytes) in CKRecord")
+            //storing all data as CKAsset
+                do {
+                    let tempDir = FileManager.default.temporaryDirectory
+                    let fileName = UUID().uuidString
+                    let fileURL = tempDir.appendingPathComponent(fileName)
+                    try dataValue.write(to: fileURL)
+                    let asset = CKAsset(fileURL: fileURL)
+                    record[key] = asset
+                    print("DEBUG: Set \(key) to CKAsset (large data: \(dataValue.count) bytes) in CKRecord")
+                } catch {
+                    print("ERROR: Error creating CKAsset: \(error)")
+                    record[key] = nil
+                    print("DEBUG: Failed to create CKAsset for \(key), set to nil instead")
                 }
             }
         }
