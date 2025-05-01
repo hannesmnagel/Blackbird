@@ -162,21 +162,28 @@ extension Blackbird.Database: CKSyncEngineDelegate {
             await processFetchedRecordZoneChanges(fetchedRecordZoneChanges)
         case .sentDatabaseChanges(_):
             //print("DEBUG: Database changes synced to CloudKit")
+            return
         case .sentRecordZoneChanges(let sentRecordZoneChanges):
             //print("DEBUG: Record changes sent to CloudKit: \(sentRecordZoneChanges.savedRecords.count) saved records, \(sentRecordZoneChanges.deletedRecordIDs.count) deleted records")
             await processSuccessfullyUploadedRecords(sentRecordZoneChanges)
         case .willFetchChanges(_):
             //print("DEBUG: About to fetch changes from CloudKit")
+            return
         case .willFetchRecordZoneChanges(_):
             //print("DEBUG: About to fetch record zone changes for zones")
+            return
         case .didFetchRecordZoneChanges(_):
             //print("DEBUG: Finished fetching record zone changes for zones")
+            return
         case .didFetchChanges(_):
             //print("DEBUG: Finished fetching all changes from CloudKit")
+            return
         case .willSendChanges(_):
             //print("DEBUG: About to send local changes to CloudKit")
+            return
         case .didSendChanges(_):
             //print("DEBUG: Finished sending local changes to CloudKit")
+            return
         @unknown default:
             //print("DEBUG: Unknown CloudKit sync event")
             return
