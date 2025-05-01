@@ -415,7 +415,7 @@ extension BlackbirdModel {
         })
         
         if !hasStatusColumn {
-            print("DEBUG: Adding missing _sync_status column to table \(Self.tableName)")
+            //print("DEBUG: Adding missing _sync_status column to table \(Self.tableName)")
             try core.execute("ALTER TABLE `\(Self.tableName)` ADD COLUMN _sync_status INTEGER NOT NULL DEFAULT 0")
         }
         
@@ -538,7 +538,7 @@ extension BlackbirdModel {
         })
         
         if !hasStatusColumn {
-            print("DEBUG: Adding missing _sync_status column to table \(Self.tableName)")
+            //print("DEBUG: Adding missing _sync_status column to table \(Self.tableName)")
             try core.execute("ALTER TABLE `\(Self.tableName)` ADD COLUMN _sync_status INTEGER NOT NULL DEFAULT 0")
         }
 

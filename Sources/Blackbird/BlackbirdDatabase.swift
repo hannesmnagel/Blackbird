@@ -227,7 +227,7 @@ extension Blackbird {
         internal var syncEngine : CKSyncEngine {
             if let engine = _syncEngine.value { return engine }
 
-            print("DEBUG: Creating CloudKit sync engine with container: \(containerIdentifier)")
+            //print("DEBUG: Creating CloudKit sync engine with container: \(containerIdentifier)")
             let container = CKContainer(identifier: containerIdentifier)
             
             // Load saved state serialization if this is not an in-memory database
@@ -239,15 +239,15 @@ extension Blackbird {
                 
                 // If still nil, it means we don't have any saved state
                 if stateSerialization.value == nil {
-                    print("DEBUG: No previous state found, starting with fresh sync state")
+                    //print("DEBUG: No previous state found, starting with fresh sync state")
                 }
             } else {
-                print("DEBUG: Found previous sync state, reusing it")
+                //print("DEBUG: Found previous sync state, reusing it")
             }
             
             let config = CKSyncEngine.Configuration(database: container.privateCloudDatabase, stateSerialization: stateSerialization.value, delegate: self)
             let engine = CKSyncEngine(config)
-            print("DEBUG: CloudKit sync engine created successfully")
+            //print("DEBUG: CloudKit sync engine created successfully")
             self._syncEngine.value = engine
             return engine
         }
