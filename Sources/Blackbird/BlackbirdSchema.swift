@@ -457,7 +457,7 @@ extension Blackbird {
                     // drop indexes and columns
                     var schemaInDB = schemaInDB
                     for indexToDrop in currentIndexes.subtracting(targetIndexes) { try core.execute("DROP INDEX `\(name)+index+\(indexToDrop.name)`") }
-                    for columnNameToDrop in schemaInDB.columnNames.subtracting(columnNames) { try core.execute("ALTER TABLE `\(name)` DROP COLUMN `\(columnNameToDrop)`") }
+                    for columnNameToDrop in schemaInDB.columnNames.subtracting(columnNames).subtracting(["_sync_status"]) { try core.execute("ALTER TABLE `\(name)` DROP COLUMN `\(columnNameToDrop)`") }
                     schemaInDB = try Table(isolatedCore: core, tableName: name, type: type)!
                     
                     if primaryKeysChanged || !Set(schemaInDB.columns).subtracting(columns).isEmpty {
