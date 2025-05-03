@@ -532,20 +532,6 @@ extension Blackbird.Database: CKSyncEngineDelegate {
             
             //print("DEBUG: Added all sync triggers to table \(tableName)")
         } else {
-            // Table exists - ensure it has a _sync_status column
-            let hasStatusColumn = try await query("PRAGMA table_info(`\(tableName)`)").contains(where: { row in
-                row["name"]?.stringValue == "_sync_status"
-            })
-            
-            if !hasStatusColumn {
-                //print("DEBUG: Adding _sync_status column to existing table \(tableName)")
-                try await execute("ALTER TABLE `\(tableName)` ADD COLUMN _sync_status INTEGER NOT NULL DEFAULT 0")
-                
-                // Create triggers for CloudKit sync
-                try await execute(Blackbird.Table.createCloudKitInsertTriggerStatement(tableName: tableName))
-                try await execute(Blackbird.Table.createCloudKitUpdateTriggerStatement(tableName: tableName))
-                try await execute(Blackbird.Table.createCloudKitDeleteTriggerStatement(tableName: tableName))
-            }
             
             // Check for new columns that need to be added
             let existingColumns = try await query("PRAGMA table_info(`\(tableName)`)").map { row -> String? in
@@ -852,21 +838,6 @@ extension Blackbird.Database {
                 continue
             }
             
-            // Check if _sync_status column exists, add it if it doesn't
-            let hasStatusColumn = try await query("PRAGMA table_info(`\(tableName)`)").contains(where: { row in
-                row["name"]?.stringValue == "_sync_status"
-            })
-            
-            if !hasStatusColumn {
-                //print("DEBUG: Adding _sync_status column to table \(tableName) during sync")
-                try await execute("ALTER TABLE `\(tableName)` ADD COLUMN _sync_status INTEGER NOT NULL DEFAULT 1")
-                
-                // Add sync triggers
-                try await execute(Blackbird.Table.createCloudKitInsertTriggerStatement(tableName: tableName))
-                try await execute(Blackbird.Table.createCloudKitUpdateTriggerStatement(tableName: tableName))
-                try await execute(Blackbird.Table.createCloudKitDeleteTriggerStatement(tableName: tableName))
-            }
-            
             // Check if table has an id column
             let hasIDColumn = try await query("PRAGMA table_info(`\(tableName)`)").contains(where: { row in
                 row["name"]?.stringValue == "id"
@@ -962,45 +933,6 @@ extension Blackbird.Database {
         do {
             // Find all tables instead of just those with _sync_status
             let tables = try await query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
-            
-            //print("DEBUG: Found \(tables.count) tables in database to sync")
-            for table in tables {
-                if let name = table["name"]?.stringValue {
-                    // Skip internal tables that shouldn't be synced
-                    if name == "_cloudkit_deletions" {
-                        //print("DEBUG: Skipping internal table: \(name)")
-                        continue
-                    }
-                    
-                    //print("DEBUG: Table eligible for sync: \(name)")
-                    
-                    // Check if _sync_status column exists, add it if it doesn't
-                    let hasStatusColumn = try await query("PRAGMA table_info(`\(name)`)").contains(where: { row in
-                        row["name"]?.stringValue == "_sync_status"
-                    })
-                    
-                    if !hasStatusColumn {
-                        //print("DEBUG: Adding _sync_status column to table \(name)")
-                        try await execute("ALTER TABLE `\(name)` ADD COLUMN _sync_status INTEGER NOT NULL DEFAULT 0")
-                        
-                        // Add sync triggers
-                        try await execute(Blackbird.Table.createCloudKitInsertTriggerStatement(tableName: name))
-                        try await execute(Blackbird.Table.createCloudKitUpdateTriggerStatement(tableName: name))
-                        try await execute(Blackbird.Table.createCloudKitDeleteTriggerStatement(tableName: name))
-                    } else {
-                        // Check if triggers need to be updated
-                        // Drop existing triggers to recreate them with the latest implementation
-                        try? await execute("DROP TRIGGER IF EXISTS `\(name)_ck_insert_trigger`")
-                        try? await execute("DROP TRIGGER IF EXISTS `\(name)_ck_update_trigger`")
-                        try? await execute("DROP TRIGGER IF EXISTS `\(name)_ck_delete_trigger`")
-                        
-                        //print("DEBUG: Updating sync triggers for table \(name)")
-                        try await execute(Blackbird.Table.createCloudKitInsertTriggerStatement(tableName: name))
-                        try await execute(Blackbird.Table.createCloudKitUpdateTriggerStatement(tableName: name))
-                        try await execute(Blackbird.Table.createCloudKitDeleteTriggerStatement(tableName: name))
-                    }
-                }
-            }
             
             let container = CKContainer(identifier: containerIdentifier)
             let database = container.privateCloudDatabase

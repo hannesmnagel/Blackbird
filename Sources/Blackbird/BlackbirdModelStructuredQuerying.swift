@@ -414,11 +414,6 @@ extension BlackbirdModel {
             row["name"]?.stringValue == "_sync_status"
         })
         
-        if !hasStatusColumn {
-            //print("DEBUG: Adding missing _sync_status column to table \(Self.tableName)")
-            try core.execute("ALTER TABLE `\(Self.tableName)` ADD COLUMN _sync_status INTEGER NOT NULL DEFAULT 0")
-        }
-        
         let decoded = DecodedStructuredQuery(operation: "UPDATE", matching: matching, updating: changes)
 
         let changeCountBefore = core.changeCount
@@ -536,11 +531,6 @@ extension BlackbirdModel {
         let hasStatusColumn = try core.query("PRAGMA table_info(`\(Self.tableName)`)").contains(where: { row in
             row["name"]?.stringValue == "_sync_status"
         })
-        
-        if !hasStatusColumn {
-            //print("DEBUG: Adding missing _sync_status column to table \(Self.tableName)")
-            try core.execute("ALTER TABLE `\(Self.tableName)` ADD COLUMN _sync_status INTEGER NOT NULL DEFAULT 0")
-        }
 
         let decoded = DecodedStructuredQuery(operation: "UPDATE", updating: changes, updateWhereAutoOptimization: false)
 
