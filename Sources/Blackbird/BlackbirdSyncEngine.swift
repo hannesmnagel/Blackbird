@@ -215,6 +215,9 @@ extension Blackbird.Database: CKSyncEngineDelegate {
                         continue
                     }
                     
+                    // Ensure _sync_status column exists
+                    try await ensureSyncStatusColumnExists(for: tableName)
+                    
                     //print("DEBUG: Processing record: \(recordID) in table: \(tableName), changedKeys: \(modification.record.changedKeys())")
                     
                     // Convert the CKRecord to a Blackbird.Row
@@ -410,10 +413,6 @@ extension Blackbird.Database: CKSyncEngineDelegate {
                                 // Just make sure the sync status is reset
                                 try await self.query("UPDATE `\(tableName)` SET `_sync_status` = 0 WHERE id = ?", recordID)
                             }
-                        } else {
-                            //print("DEBUG: No keys to check for record \(recordID), just ensuring sync status")
-                            // Just make sure the sync status is reset
-                            try await self.query("UPDATE `\(tableName)` SET `_sync_status` = 0 WHERE id = ?", recordID)
                         }
                     }
                 }
@@ -453,6 +452,9 @@ extension Blackbird.Database: CKSyncEngineDelegate {
                     //print("DEBUG: Skipping sync status update for internal table: \(tableName)")
                     continue
                 }
+                
+                // Ensure _sync_status column exists
+                try await ensureSyncStatusColumnExists(for: tableName)
                 
                 // Mark the record as successfully synced (status = 0)
                 let query = "UPDATE `\(tableName)` SET _sync_status = 0 WHERE id = ?"
@@ -1116,6 +1118,33 @@ extension Blackbird.Database {
             //print("DEBUG: Successfully loaded CloudKit sync state from \(stateFilePath)")
         } catch {
             print("ERROR: Failed to load CloudKit sync state: \(error.localizedDescription)")
+        }
+    }
+}
+
+extension Blackbird.Database {
+    // MARK: - Helper Functions
+    
+    /// Ensures that a table has the _sync_status column, adding it if it doesn't exist
+    internal func ensureSyncStatusColumnExists(for tableName: String) async throws {
+        // Skip internal tables that shouldn't be synced
+        if tableName == "_cloudkit_deletions" {
+            return
+        }
+        
+        // Check if _sync_status column exists
+        let hasStatusColumn = try await query("PRAGMA table_info(`\(tableName)`)").contains(where: { row in
+            row["name"]?.stringValue == "_sync_status"
+        })
+        
+        if !hasStatusColumn {
+            // Add _sync_status column
+            try await execute("ALTER TABLE `\(tableName)` ADD COLUMN _sync_status INTEGER NOT NULL DEFAULT 0")
+            
+            // Add sync triggers
+            try await execute(Blackbird.Table.createCloudKitInsertTriggerStatement(tableName: tableName))
+            try await execute(Blackbird.Table.createCloudKitUpdateTriggerStatement(tableName: tableName))
+            try await execute(Blackbird.Table.createCloudKitDeleteTriggerStatement(tableName: tableName))
         }
     }
 }
